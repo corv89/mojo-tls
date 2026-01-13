@@ -239,6 +239,22 @@ fn ssl_conf_ca_chain(conf: FFIPtr, ca_chain: FFIPtr, ca_crl: FFIPtr):
     external_call["mojo_tls_ssl_conf_ca_chain", NoneType](conf.addr, ca_chain.addr, ca_crl.addr)
 
 
+fn ssl_conf_own_cert(conf: FFIPtr, own_cert: FFIPtr, pk_ctx: FFIPtr) -> c_int:
+    """Set own certificate chain and private key (for servers or mutual TLS).
+
+    Args:
+        conf: SSL configuration.
+        own_cert: Own certificate chain.
+        pk_ctx: Private key context.
+
+    Returns:
+        0 on success, or MBEDTLS_ERR_SSL_ALLOC_FAILED.
+    """
+    return external_call["mojo_tls_ssl_conf_own_cert", c_int](
+        conf.addr, own_cert.addr, pk_ctx.addr
+    )
+
+
 # ============================================================================
 # TLS Version Configuration (via C shim - static inline in mbedTLS)
 # ============================================================================
@@ -287,3 +303,60 @@ fn ssl_get_ciphersuite(ssl: FFIPtr) -> FFIPtr:
 fn ssl_get_verify_result(ssl: FFIPtr) -> UInt32:
     """Get the result of certificate verification."""
     return external_call["mojo_tls_ssl_get_verify_result", UInt32](ssl.addr)
+
+
+# ============================================================================
+# Private Key Functions
+# ============================================================================
+
+
+fn pk_init(pk: FFIPtr):
+    """Initialize a private key context."""
+    external_call["mojo_tls_pk_init", NoneType](pk.addr)
+
+
+fn pk_free(pk: FFIPtr):
+    """Free a private key context."""
+    external_call["mojo_tls_pk_free", NoneType](pk.addr)
+
+
+fn pk_parse_key(
+    pk: FFIPtr,
+    key: UnsafePointer[UInt8],
+    keylen: c_size_t,
+    pwd: UnsafePointer[UInt8],
+    pwdlen: c_size_t,
+) -> c_int:
+    """Parse a private key in PEM or DER format.
+
+    Args:
+        pk: Private key context to populate.
+        key: Buffer containing the key.
+        keylen: Length of the key buffer (include null terminator for PEM).
+        pwd: Optional password for encrypted keys (or null).
+        pwdlen: Length of password (0 if no password).
+
+    Returns:
+        0 on success, or a negative error code.
+    """
+    return external_call["mojo_tls_pk_parse_key", c_int](
+        pk.addr, key, keylen, pwd, pwdlen
+    )
+
+
+fn pk_parse_keyfile(
+    pk: FFIPtr,
+    path: UnsafePointer[c_char],
+    password: UnsafePointer[c_char],
+) -> c_int:
+    """Load and parse a private key from a file.
+
+    Args:
+        pk: Private key context to populate.
+        path: Path to the key file (null-terminated).
+        password: Optional password for encrypted keys (or null).
+
+    Returns:
+        0 on success, or a negative error code.
+    """
+    return external_call["mojo_tls_pk_parse_keyfile", c_int](pk.addr, path, password)

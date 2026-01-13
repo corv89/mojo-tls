@@ -11,14 +11,66 @@ fn init_mojo_tls() raises:
     """Initialize mbedTLS and PSA Crypto.
 
     Must be called before any other TLS operations.
-    Safe to call multiple times - PSA Crypto handles idempotent init.
+    Safe to call multiple times - PSA Crypto initialization is idempotent
+    (tracked in C shim), and struct size validation is cheap.
 
     Raises:
-        If PSA Crypto initialization fails.
+        If PSA Crypto initialization or struct size validation fails.
     """
     var ret = external_call["mojo_tls_init", c_int]()
     if ret != 0:
         raise Error("Failed to initialize mojo_tls (PSA Crypto): " + String(ret))
+
+    # Validate struct sizes on every call (cheap operation)
+    # This catches mbedTLS version mismatches early
+    _validate_struct_sizes()
+
+
+fn _validate_struct_sizes() raises:
+    """Validate that compiled struct sizes match expected values.
+
+    This catches mbedTLS version mismatches that would cause memory corruption.
+
+    Raises:
+        If any struct size doesn't match the expected value.
+    """
+    var actual = query_struct_sizes()
+
+    if actual[0] != SSL_CONTEXT_SIZE:
+        raise Error(
+            "mbedTLS struct size mismatch: ssl_context is "
+            + String(actual[0])
+            + " bytes, expected "
+            + String(SSL_CONTEXT_SIZE)
+        )
+    if actual[1] != SSL_CONFIG_SIZE:
+        raise Error(
+            "mbedTLS struct size mismatch: ssl_config is "
+            + String(actual[1])
+            + " bytes, expected "
+            + String(SSL_CONFIG_SIZE)
+        )
+    if actual[3] != X509_CRT_SIZE:
+        raise Error(
+            "mbedTLS struct size mismatch: x509_crt is "
+            + String(actual[3])
+            + " bytes, expected "
+            + String(X509_CRT_SIZE)
+        )
+    if actual[4] != PK_CONTEXT_SIZE:
+        raise Error(
+            "mbedTLS struct size mismatch: pk_context is "
+            + String(actual[4])
+            + " bytes, expected "
+            + String(PK_CONTEXT_SIZE)
+        )
+    if actual[5] != NET_CONTEXT_SIZE:
+        raise Error(
+            "mbedTLS struct size mismatch: net_context is "
+            + String(actual[5])
+            + " bytes, expected "
+            + String(NET_CONTEXT_SIZE)
+        )
 
 
 # Struct sizes from mbedTLS 4.0.0 Homebrew build

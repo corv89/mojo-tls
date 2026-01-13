@@ -35,11 +35,14 @@ For more control, use TLSConfig and TLSContext directly:
         # ... set up BIO and perform handshake
 """
 
-# High-level API
+# High-level API - Client
 from .tls_config import TLSConfig, get_system_ca_bundle
-from .tls_context import TLSContext
+from .tls_context import TLSContext, ServerTLSContext
 from .tls_stream import TLSStream
 from .error import TLSError, check_error
+
+# High-level API - Server
+from .tls_listener import TLSListener, TLSClientConnection
 
 # Constants (re-export commonly used ones)
 from ._ffi.constants import (

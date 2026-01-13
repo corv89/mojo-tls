@@ -21,8 +21,16 @@ if [ ! -d "$MBEDTLS_INCLUDE" ]; then
 fi
 
 # Compile the shim, linking against mbedTLS
-echo "Compiling mojo_tls_shim.c..."
+# Add -DMOJO_TLS_DEBUG for debug output
+DEBUG_FLAGS=""
+if [ "$1" = "debug" ]; then
+    DEBUG_FLAGS="-DMOJO_TLS_DEBUG"
+    echo "Compiling mojo_tls_shim.c with DEBUG enabled..."
+else
+    echo "Compiling mojo_tls_shim.c..."
+fi
 cc -shared -fPIC \
+    $DEBUG_FLAGS \
     -I"$MBEDTLS_INCLUDE" \
     -L"$MBEDTLS_LIB" \
     -lmbedtls -lmbedx509 -lmbedcrypto \

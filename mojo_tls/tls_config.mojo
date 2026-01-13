@@ -5,6 +5,7 @@ and certificates with proper RAII cleanup.
 """
 
 from sys.ffi import external_call, c_int, c_char
+from sys.info import platform_map
 from memory import UnsafePointer
 from pathlib import Path
 
@@ -31,8 +32,13 @@ from ._ffi.ssl import (
     ssl_config_defaults,
     ssl_conf_authmode,
     ssl_conf_ca_chain,
+    ssl_conf_own_cert,
     ssl_conf_min_version,
     ssl_conf_max_version,
+    pk_init,
+    pk_free,
+    pk_parse_key,
+    pk_parse_keyfile,
     FFIPtr,
     alloc_ffi,
     free_ffi,
@@ -47,20 +53,21 @@ from ._ffi.x509_crt import (
 from .error import check_error
 
 
-# System CA bundle paths
-comptime MACOS_CA_BUNDLE = "/opt/homebrew/etc/ca-certificates/cert.pem"
-comptime LINUX_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+# System CA bundle path (compile-time platform selection)
+comptime SYSTEM_CA_BUNDLE = platform_map[
+    "system_ca_bundle",
+    linux="/etc/ssl/certs/ca-certificates.crt",
+    macos="/opt/homebrew/etc/ca-certificates/cert.pem",
+]()
 
 
 fn get_system_ca_bundle() -> String:
     """Get the system CA certificate bundle path.
 
     Returns:
-        Path to the system CA bundle.
+        Path to the system CA bundle (selected at compile time based on target OS).
     """
-    # TODO: Use CompilationTarget.is_macos() when available
-    # For now, default to macOS Homebrew path
-    return MACOS_CA_BUNDLE
+    return SYSTEM_CA_BUNDLE
 
 
 struct TLSConfig(Movable):
@@ -109,7 +116,7 @@ struct TLSConfig(Movable):
 
         # Allocate PK context for private key
         self._pk_ctx = alloc_ffi(PK_CONTEXT_SIZE)
-        external_call["mojo_tls_pk_init", NoneType](self._pk_ctx.addr)
+        pk_init(self._pk_ctx)
 
         self._is_client = True
         self._ca_loaded = False
@@ -124,11 +131,20 @@ struct TLSConfig(Movable):
         self._is_client = existing._is_client
         self._ca_loaded = existing._ca_loaded
         self._own_cert_loaded = existing._own_cert_loaded
+        # Invalidate source to prevent double-free when it's destroyed
+        existing._config = FFIPtr(0)
+        existing._ca_chain = FFIPtr(0)
+        existing._own_cert = FFIPtr(0)
+        existing._pk_ctx = FFIPtr(0)
 
     fn __del__(owned self):
         """Clean up TLS configuration and free resources."""
+        # Skip cleanup if this object was moved-from (pointers are null)
+        if not self._config:
+            return
+
         # Free PK context
-        external_call["mojo_tls_pk_free", NoneType](self._pk_ctx.addr)
+        pk_free(self._pk_ctx)
         free_ffi(self._pk_ctx)
 
         # Free own cert
@@ -289,3 +305,88 @@ struct TLSConfig(Movable):
             Pointer to mbedtls_ssl_config.
         """
         return self._config
+
+    fn load_own_certificate(mut self, path: String) raises:
+        """Load own certificate chain from a file.
+
+        For servers, this is the server certificate. For clients with
+        mutual TLS, this is the client certificate.
+
+        Args:
+            path: Path to PEM or DER certificate file.
+
+        Raises:
+            If loading fails.
+        """
+        # Create null-terminated path string
+        var path_bytes = path.as_bytes()
+        var path_buf = List[UInt8](capacity=len(path_bytes) + 1)
+        for i in range(len(path_bytes)):
+            path_buf.append(path_bytes[i])
+        path_buf.append(0)  # Null terminator
+        var path_ptr = path_buf.unsafe_ptr().bitcast[c_char]()
+
+        # Parse certificate into own_cert directly from file
+        var ret = x509_crt_parse_file(self._own_cert, path_ptr)
+        check_error(ret, "x509_crt_parse_file (own_cert)")
+
+    fn load_own_key(mut self, path: String, password: String = "") raises:
+        """Load private key from a file.
+
+        Must be called after load_own_certificate() to associate the
+        key with the certificate on the config.
+
+        Args:
+            path: Path to PEM or DER private key file.
+            password: Optional password for encrypted keys.
+
+        Raises:
+            If loading fails.
+        """
+        # Create null-terminated path string
+        var path_bytes = path.as_bytes()
+        var path_buf = List[UInt8](capacity=len(path_bytes) + 1)
+        for i in range(len(path_bytes)):
+            path_buf.append(path_bytes[i])
+        path_buf.append(0)  # Null terminator
+        var path_ptr = path_buf.unsafe_ptr().bitcast[c_char]()
+
+        # Handle password - always create a buffer (empty = null terminator only)
+        # mbedtls expects NULL for no password, but we can pass empty string
+        var pwd_buf = List[UInt8](capacity=1)
+        if len(password) > 0:
+            var pwd_bytes = password.as_bytes()
+            pwd_buf = List[UInt8](capacity=len(pwd_bytes) + 1)
+            for i in range(len(pwd_bytes)):
+                pwd_buf.append(pwd_bytes[i])
+        pwd_buf.append(0)  # Null terminator
+        var pwd_ptr = pwd_buf.unsafe_ptr().bitcast[c_char]()
+
+        # Parse private key (empty password string works like NULL for unencrypted keys)
+        var ret = pk_parse_keyfile(self._pk_ctx, path_ptr, pwd_ptr)
+        check_error(ret, "pk_parse_keyfile")
+
+        # Now set the certificate + key on the config
+        ret = ssl_conf_own_cert(self._config, self._own_cert, self._pk_ctx)
+        check_error(ret, "ssl_conf_own_cert")
+
+        self._own_cert_loaded = True
+
+    fn load_own_cert_and_key(
+        mut self, cert_path: String, key_path: String, password: String = ""
+    ) raises:
+        """Load own certificate and private key from files.
+
+        Convenience method that calls load_own_certificate() and
+        load_own_key() in sequence.
+
+        Args:
+            cert_path: Path to certificate file.
+            key_path: Path to private key file.
+            password: Optional password for encrypted key.
+
+        Raises:
+            If loading fails.
+        """
+        self.load_own_certificate(cert_path)
+        self.load_own_key(key_path, password)

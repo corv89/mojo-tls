@@ -86,6 +86,14 @@ int mojo_tls_x509_crt_parse_file(void *chain, const char *path);
  * ============================================================================ */
 void mojo_tls_pk_init(void *pk);
 void mojo_tls_pk_free(void *pk);
+int mojo_tls_pk_parse_key(void *pk, const unsigned char *key, size_t keylen,
+                          const unsigned char *pwd, size_t pwdlen);
+int mojo_tls_pk_parse_keyfile(void *pk, const char *path, const char *password);
+
+/* ============================================================================
+ * SSL Certificate Configuration (for servers)
+ * ============================================================================ */
+int mojo_tls_ssl_conf_own_cert(void *conf, void *own_cert, void *pk_ctx);
 
 /* ============================================================================
  * Network Socket Functions
@@ -96,6 +104,12 @@ int mojo_tls_net_connect(void *ctx, const char *host, const char *port, int prot
 int mojo_tls_net_bind(void *ctx, const char *bind_ip, const char *port, int proto);
 int mojo_tls_net_accept(void *bind_ctx, void *client_ctx,
                         void *client_ip, size_t buf_size, size_t *cip_len);
+
+/* Server accept with allocation - returns newly allocated client context */
+void* mojo_tls_net_accept_alloc(void *bind_ctx, void *client_ip,
+                                 size_t buf_size, size_t *cip_len, int *ret_code);
+void mojo_tls_net_free_context(void *ctx);
+
 int mojo_tls_net_set_block(void *ctx);
 int mojo_tls_net_set_nonblock(void *ctx);
 

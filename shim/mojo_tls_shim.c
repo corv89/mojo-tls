@@ -18,6 +18,14 @@
 #endif
 #include <mbedtls/ssl.h>
 #include <mbedtls/error.h>
+#include <mbedtls/debug.h>
+
+#ifdef MOJO_TLS_DEBUG
+static void mojo_tls_debug_callback(void *ctx, int level, const char *file, int line, const char *str) {
+    (void)ctx;
+    fprintf(stderr, "[mbedTLS %d] %s:%04d: %s", level, file, line, str);
+}
+#endif
 #include <mbedtls/private/entropy.h>    /* Moved to private in 4.0.0 */
 #include <mbedtls/private/ctr_drbg.h>   /* Moved to private in 4.0.0 */
 #include <mbedtls/x509_crt.h>
@@ -107,7 +115,9 @@ void mojo_tls_conf_max_version(void *conf, int version) {
  * ============================================================================ */
 
 void mojo_tls_ssl_init(void *ssl) {
+    DEBUG_PRINT("[C DEBUG] ssl_init called: ssl=%p\n", ssl);
     mbedtls_ssl_init((mbedtls_ssl_context *)ssl);
+    DEBUG_PRINT("[C DEBUG] ssl_init done\n");
 }
 
 void mojo_tls_ssl_free(void *ssl) {
@@ -115,10 +125,13 @@ void mojo_tls_ssl_free(void *ssl) {
 }
 
 int mojo_tls_ssl_setup(void *ssl, const void *conf) {
-    return mbedtls_ssl_setup(
+    DEBUG_PRINT("[C DEBUG] ssl_setup called: ssl=%p conf=%p\n", ssl, conf);
+    int ret = mbedtls_ssl_setup(
         (mbedtls_ssl_context *)ssl,
         (const mbedtls_ssl_config *)conf
     );
+    DEBUG_PRINT("[C DEBUG] ssl_setup returned: %d\n", ret);
+    return ret;
 }
 
 int mojo_tls_ssl_set_hostname(void *ssl, const char *hostname) {
@@ -149,7 +162,13 @@ void mojo_tls_ssl_set_bio(void *ssl, void *p_bio,
 int mojo_tls_ssl_handshake(void *ssl) {
     DEBUG_PRINT("[C DEBUG] mojo_tls_ssl_handshake called, ssl=%p, psa_initialized=%d\n", ssl, psa_initialized);
     int ret = mbedtls_ssl_handshake((mbedtls_ssl_context *)ssl);
-    DEBUG_PRINT("[C DEBUG] mbedtls_ssl_handshake returned %d\n", ret);
+    if (ret != 0) {
+        char error_buf[200];
+        mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+        DEBUG_PRINT("[C DEBUG] mbedtls_ssl_handshake FAILED: %d (0x%x): %s\n", ret, -ret, error_buf);
+    } else {
+        DEBUG_PRINT("[C DEBUG] mbedtls_ssl_handshake SUCCESS\n");
+    }
     return ret;
 }
 
@@ -194,6 +213,11 @@ int mojo_tls_ssl_config_defaults(void *conf, int endpoint, int transport, int pr
         preset
     );
     DEBUG_PRINT("[C DEBUG] ssl_config_defaults returned: %d\n", ret);
+#ifdef MOJO_TLS_DEBUG
+    /* Set debug callback for detailed TLS debugging */
+    mbedtls_ssl_conf_dbg((mbedtls_ssl_config *)conf, mojo_tls_debug_callback, NULL);
+    mbedtls_debug_set_threshold(4);  /* 0=none, 1=error, 2=state change, 3=info, 4=verbose */
+#endif
     /* mbedTLS 4.0: PSA Crypto handles RNG internally via psa_crypto_init() */
     return ret;
 }
@@ -318,6 +342,75 @@ void mojo_tls_pk_free(void *pk) {
     mbedtls_pk_free((mbedtls_pk_context *)pk);
 }
 
+int mojo_tls_pk_parse_key(void *pk, const unsigned char *key, size_t keylen,
+                          const unsigned char *pwd, size_t pwdlen) {
+    char error_buf[200];
+    DEBUG_PRINT("[C DEBUG] pk_parse_key called\n");
+    DEBUG_PRINT("[C DEBUG]   pk: %p\n", pk);
+    DEBUG_PRINT("[C DEBUG]   keylen: %zu, pwdlen: %zu\n", keylen, pwdlen);
+
+    /* mbedTLS 4.0: RNG parameters removed - PSA Crypto handles RNG internally */
+    int ret = mbedtls_pk_parse_key(
+        (mbedtls_pk_context *)pk,
+        key, keylen,
+        pwd, pwdlen
+    );
+
+    if (ret != 0) {
+        mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+        DEBUG_PRINT("[C DEBUG] pk_parse_key ERROR: %d (0x%x): %s\n", ret, ret, error_buf);
+    } else {
+        DEBUG_PRINT("[C DEBUG] pk_parse_key SUCCESS\n");
+    }
+    return ret;
+}
+
+int mojo_tls_pk_parse_keyfile(void *pk, const char *path, const char *password) {
+    char error_buf[200];
+    DEBUG_PRINT("[C DEBUG] pk_parse_keyfile called\n");
+    DEBUG_PRINT("[C DEBUG]   pk: %p\n", pk);
+    DEBUG_PRINT("[C DEBUG]   path: %s\n", path ? path : "(null)");
+
+    /* mbedTLS 4.0: RNG parameters removed - PSA Crypto handles RNG internally */
+    int ret = mbedtls_pk_parse_keyfile(
+        (mbedtls_pk_context *)pk,
+        path,
+        password
+    );
+
+    if (ret != 0) {
+        mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+        DEBUG_PRINT("[C DEBUG] pk_parse_keyfile ERROR: %d (0x%x): %s\n", ret, ret, error_buf);
+    } else {
+        DEBUG_PRINT("[C DEBUG] pk_parse_keyfile SUCCESS\n");
+    }
+    return ret;
+}
+
+/* ============================================================================
+ * SSL Certificate Configuration (for servers)
+ * ============================================================================ */
+
+int mojo_tls_ssl_conf_own_cert(void *conf, void *own_cert, void *pk_ctx) {
+    DEBUG_PRINT("[C DEBUG] ssl_conf_own_cert called\n");
+    DEBUG_PRINT("[C DEBUG]   conf: %p, own_cert: %p, pk_ctx: %p\n", conf, own_cert, pk_ctx);
+
+    int ret = mbedtls_ssl_conf_own_cert(
+        (mbedtls_ssl_config *)conf,
+        (mbedtls_x509_crt *)own_cert,
+        (mbedtls_pk_context *)pk_ctx
+    );
+
+    if (ret != 0) {
+        char error_buf[200];
+        mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+        DEBUG_PRINT("[C DEBUG] ssl_conf_own_cert ERROR: %d (0x%x): %s\n", ret, ret, error_buf);
+    } else {
+        DEBUG_PRINT("[C DEBUG] ssl_conf_own_cert SUCCESS\n");
+    }
+    return ret;
+}
+
 /* ============================================================================
  * Network Socket Functions
  * ============================================================================ */
@@ -354,6 +447,50 @@ int mojo_tls_net_accept(void *bind_ctx, void *client_ctx,
         buf_size,
         cip_len
     );
+}
+
+void* mojo_tls_net_accept_alloc(void *bind_ctx, void *client_ip,
+                                 size_t buf_size, size_t *cip_len, int *ret_code) {
+    DEBUG_PRINT("[C DEBUG] net_accept_alloc called: bind_ctx=%p\n", bind_ctx);
+
+    /* Allocate new client context */
+    mbedtls_net_context *client_ctx = (mbedtls_net_context *)calloc(1, sizeof(mbedtls_net_context));
+    if (!client_ctx) {
+        DEBUG_PRINT("[C DEBUG] net_accept_alloc: allocation failed\n");
+        if (ret_code) *ret_code = -1;
+        return NULL;
+    }
+
+    mbedtls_net_init(client_ctx);
+
+    int ret = mbedtls_net_accept(
+        (mbedtls_net_context *)bind_ctx,
+        client_ctx,
+        client_ip,
+        buf_size,
+        cip_len
+    );
+
+    if (ret_code) *ret_code = ret;
+
+    if (ret != 0) {
+        DEBUG_PRINT("[C DEBUG] net_accept_alloc: accept failed with %d\n", ret);
+        mbedtls_net_free(client_ctx);
+        free(client_ctx);
+        return NULL;
+    }
+
+    DEBUG_PRINT("[C DEBUG] net_accept_alloc: success, client_ctx=%p fd=%d\n",
+            (void*)client_ctx, client_ctx->fd);
+    return client_ctx;
+}
+
+void mojo_tls_net_free_context(void *ctx) {
+    DEBUG_PRINT("[C DEBUG] net_free_context: ctx=%p\n", ctx);
+    if (ctx) {
+        mbedtls_net_free((mbedtls_net_context *)ctx);
+        free(ctx);
+    }
 }
 
 int mojo_tls_net_set_block(void *ctx) {

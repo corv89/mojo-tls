@@ -82,6 +82,42 @@ fn net_accept(
     )
 
 
+fn net_accept_alloc(
+    bind_ctx: FFIPtr,
+    client_ip: FFIPtr,
+    buf_size: c_size_t,
+    cip_len: FFIPtr,
+    ret_code: UnsafePointer[c_int],
+) -> FFIPtr:
+    """Accept a connection and allocate a new client context.
+
+    The shim allocates a fresh mbedtls_net_context for the client.
+    Caller must free with net_free_context().
+
+    Args:
+        bind_ctx: Listening socket context.
+        client_ip: Buffer to store client IP (or null FFIPtr).
+        buf_size: Size of client_ip buffer.
+        cip_len: Receives length of client IP (or null FFIPtr).
+        ret_code: Receives the return code (0 on success).
+
+    Returns:
+        FFIPtr to newly allocated client context, or null on error.
+    """
+    return FFIPtr(external_call["mojo_tls_net_accept_alloc", Int](
+        bind_ctx.addr, client_ip.addr, buf_size, cip_len.addr, ret_code
+    ))
+
+
+fn net_free_context(ctx: FFIPtr):
+    """Free a client context allocated by net_accept_alloc.
+
+    Args:
+        ctx: Client context to free.
+    """
+    external_call["mojo_tls_net_free_context", NoneType](ctx.addr)
+
+
 # ============================================================================
 # Socket Configuration
 # ============================================================================
