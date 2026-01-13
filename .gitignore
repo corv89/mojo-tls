@@ -1,0 +1,30 @@
+# Build artifacts
+*.o
+*.a
+*.dylib
+*.so
+
+# Compiled binaries in root
+/test_*
+
+# Compiled binaries in tests/
+tests/test_static
+tests/test_c_connection
+
+# Shim test artifacts
+shim/test_*
+shim/*.mojo
+
+# macOS
+.DS_Store
+
+# Mojo cache
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# Debug test files
+*.mojo.tmp
