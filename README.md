@@ -1,158 +1,121 @@
 # mojo-tls
 
-Mojo TLS bindings for mbedTLS 4.0.0, providing TLS 1.2/1.3 support.
+TLS 1.3 bindings for Mojo via mbedTLS 4.0.0.
 
-## Status
+## Features
 
-**Work in Progress** - The C shim is fully functional and tested. The Mojo bindings are written but require Mojo to add support for dynamic library linking.
+- TLS 1.3 client and server support
+- High-level `TLSStream` for easy client connections
+- `TLSListener` for accepting server connections
+- Static linking with Mojo's `external_call`
+- Platform-detected CA bundle (macOS/Linux)
 
-### What Works
+## Requirements
 
-The C shim (`shim/libmojo_tls_shim.dylib`) successfully:
-- Initializes PSA Crypto (required for mbedTLS 4.0.0)
-- Performs TLS 1.2/1.3 handshakes
-- Sends and receives encrypted data
-- Loads CA certificate chains
+- macOS or Linux
+- mbedTLS 4.0.0: `brew install mbedtls` (macOS)
+- Mojo 0.25+
 
-Tested against httpbin.org with TLS 1.2 (TLS 1.3 also supported).
+## Quick Start
 
-### Current Limitation
+### Client Example
 
-Mojo's `external_call` function resolves symbols at JIT compile time, not runtime. This means dynamically loaded libraries (via `dlopen`) cannot provide symbols to `external_call`. Mojo currently doesn't have:
-- A `-l` flag to link external libraries
-- Runtime symbol resolution for `external_call`
-- A way to call through function pointers from `dlsym`
+```mojo
+from mojo_tls import TLSStream
 
-The Mojo code in this repo is structurally correct but cannot actually call the shim until Mojo adds dynamic library support.
+fn main() raises:
+    var stream = TLSStream.connect("example.com", "443")
+    _ = stream.write_all("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
 
-## Building the Shim
+    var buf = List[UInt8](capacity=4096)
+    buf.resize(4096, 0)
+    var n = stream.read(buf.unsafe_ptr(), 4096)
 
-Prerequisites:
-- macOS with Homebrew
-- mbedTLS 4.0.0: `brew install mbedtls`
+    print("TLS Version:", stream.get_version())
+    print("Ciphersuite:", stream.get_ciphersuite())
+    stream.close()
+```
 
-Build:
+### Server Example
+
+```mojo
+from mojo_tls import TLSListener
+
+fn main() raises:
+    var listener = TLSListener.bind(
+        "server.crt", "server.key",
+        "0.0.0.0", "8443"
+    )
+
+    var client = listener.accept()
+    client.handshake()
+
+    print("TLS Version:", client.get_version())
+
+    # Read request, send response...
+    client.close()
+    _ = listener
+```
+
+## Building
+
+Build and run a test:
+
 ```bash
-cd shim
-./build.sh
+./build.sh tests/test_tls_client.mojo test_client
+DYLD_LIBRARY_PATH=/path/to/mojo/runtime/lib ./test_client
 ```
 
-This creates `libmojo_tls_shim.dylib` which wraps mbedTLS functions for FFI use.
+The build script:
+1. Compiles the C shim to a static library
+2. Compiles Mojo to an object file (`mojo build --emit object`)
+3. Links everything with clang
 
-## Testing the Shim (C)
+Build shim with debug output:
 
-A working C test that performs a TLS connection:
-
-```c
-#include <dlfcn.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-int main() {
-    void *shim = dlopen("./shim/libmojo_tls_shim.dylib", RTLD_NOW);
-
-    // Get and call init function (REQUIRED for mbedTLS 4.0.0)
-    int (*tls_init)(void) = dlsym(shim, "mojo_tls_init");
-    tls_init();
-
-    // ... rest of TLS operations
-}
-```
-
-## Using with Python (Workaround)
-
-Since Mojo has Python interop, you can use the shim through Python's ctypes:
-
-```python
-import ctypes
-
-shim = ctypes.CDLL("./shim/libmojo_tls_shim.dylib")
-
-# Initialize PSA Crypto first!
-shim.mojo_tls_init()
-
-# Now use other functions...
+```bash
+./build.sh --debug tests/test_tls_client.mojo test_client
 ```
 
 ## Project Structure
 
 ```
 mojo-tls/
-├── mojo_tls/              # Mojo package (ready when FFI support arrives)
+├── mojo_tls/              # Mojo package
 │   ├── __init__.mojo      # Public API exports
-│   ├── _lib.mojo          # Library loading (needs FFI update)
+│   ├── _lib.mojo          # Init and struct size validation
 │   ├── _ffi/              # Low-level FFI bindings
-│   │   ├── constants.mojo # mbedTLS constants and error codes
-│   │   ├── ssl.mojo       # SSL/TLS function wrappers
-│   │   ├── x509_crt.mojo  # X.509 certificate functions
-│   │   └── net_sockets.mojo # Network socket functions
-│   ├── error.mojo         # TLSError type
-│   ├── tls_config.mojo    # High-level TLSConfig
-│   ├── tls_context.mojo   # High-level TLSContext
-│   └── tls_stream.mojo    # High-level TLSStream
+│   ├── tls_config.mojo    # TLSConfig - SSL configuration
+│   ├── tls_context.mojo   # TLSContext, ServerTLSContext
+│   ├── tls_stream.mojo    # TLSStream - high-level client
+│   ├── tls_listener.mojo  # TLSListener - high-level server
+│   └── error.mojo         # TLSError type
 ├── shim/                  # C shim library
-│   ├── mojo_tls_shim.h    # Shim header
 │   ├── mojo_tls_shim.c    # Shim implementation
-│   ├── build.sh           # Build script
-│   └── libmojo_tls_shim.dylib  # Built library
+│   ├── mojo_tls_shim.h    # Shim header
+│   └── build.sh           # Shim build script
 ├── tests/                 # Test files
-└── examples/              # Example code
+└── build.sh               # Main build script
 ```
 
-## Key Technical Notes
+## Technical Notes
 
-### mbedTLS 4.0.0 Changes
+### Static Linking
 
-mbedTLS 4.0.0 uses PSA Crypto internally:
-- **MUST call `mojo_tls_init()`** before any TLS operation
-- Error codes changed to PSA error codes (e.g., `-137` = `PSA_ERROR_BAD_STATE`)
-- Some headers moved to `mbedtls/private/`
-- No need for explicit entropy/CSPRNG setup (handled internally)
+Mojo's `external_call` resolves symbols at compile time. The C shim wraps mbedTLS functions (prefixed `mojo_tls_*`) and is statically linked into the final binary.
 
-### Library Dependencies
+### mbedTLS 4.0.0
 
-mbedTLS libraries must be loaded in order:
-1. `libmbedcrypto.dylib` - Crypto primitives
-2. `libmbedx509.dylib` - Certificate handling
-3. `libmbedtls.dylib` - TLS protocol
+- PSA Crypto is initialized automatically via `init_mojo_tls()`
+- Struct sizes are validated at init to catch version mismatches
+- The shim links against `libmbedtls.a`, `libmbedx509.a`, `libmbedcrypto.a`
 
-Our shim handles this by linking against all three.
+### CA Certificate Paths
 
-### Struct Sizes
-
-mbedTLS struct sizes vary by build configuration. The shim provides `mojo_tls_sizeof_*()` functions to query sizes at runtime:
-- `ssl_context`: 840 bytes
-- `ssl_config`: 352 bytes
-- `x509_crt`: 1304 bytes
-- `net_context`: 4 bytes
-
-### CA Certificate Path
-
-On macOS with Homebrew:
-```
-/opt/homebrew/etc/ca-certificates/cert.pem
-```
-
-## Future Work
-
-Once Mojo adds dynamic library support, the Mojo bindings will work. The target API:
-
-```mojo
-from mojo_tls import TLSStream
-
-fn main() raises:
-    var stream = TLSStream.connect("httpbin.org", "443")
-    _ = stream.write_all("GET /get HTTP/1.1\r\nHost: httpbin.org\r\n\r\n")
-
-    var buf = List[UInt8](capacity=4096)
-    buf.resize(4096, 0)
-    var n = stream.read(buf.unsafe_ptr(), 4096)
-    print(String(buf.unsafe_ptr(), n))
-
-    print("TLS Version:", stream.get_version())
-    stream.close()
-```
+Automatically detected at compile time:
+- macOS: `/opt/homebrew/etc/ca-certificates/cert.pem`
+- Linux: `/etc/ssl/certs/ca-certificates.crt`
 
 ## License
 
-MIT
+Apache-2.0
