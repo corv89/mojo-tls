@@ -33,6 +33,13 @@ static void mojo_tls_debug_callback(void *ctx, int level, const char *file, int 
 #include <mbedtls/net_sockets.h>
 #include <psa/crypto.h>  /* Required for PSA Crypto init in mbedTLS 4.0.0 */
 
+/* Socket headers for SO_REUSEPORT support */
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <errno.h>
+
 /* ============================================================================
  * Library Initialization
  * ============================================================================ */
@@ -477,6 +484,79 @@ int mojo_tls_net_connect(void *ctx, const char *host, const char *port, int prot
 
 int mojo_tls_net_bind(void *ctx, const char *bind_ip, const char *port, int proto) {
     return mbedtls_net_bind((mbedtls_net_context *)ctx, bind_ip, port, proto);
+}
+
+int mojo_tls_net_bind_reuseport(void *ctx, const char *bind_ip, const char *port, int proto) {
+    /* Manual socket creation with SO_REUSEPORT for prefork servers.
+     * Unlike mbedtls_net_bind(), this sets SO_REUSEPORT before bind()
+     * to allow multiple processes to bind to the same port. */
+    mbedtls_net_context *net = (mbedtls_net_context *)ctx;
+    struct addrinfo hints, *addr_list, *cur;
+    int fd = -1;
+    int gai_ret;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;  /* Use IPv4 explicitly for compatibility */
+    hints.ai_socktype = (proto == MBEDTLS_NET_PROTO_UDP) ? SOCK_DGRAM : SOCK_STREAM;
+    hints.ai_protocol = (proto == MBEDTLS_NET_PROTO_UDP) ? IPPROTO_UDP : IPPROTO_TCP;
+    hints.ai_flags = AI_PASSIVE;
+
+    /* Handle "0.0.0.0" as NULL for getaddrinfo (bind to all interfaces) */
+    const char *node = bind_ip;
+    if (bind_ip != NULL && strcmp(bind_ip, "0.0.0.0") == 0) {
+        node = NULL;
+    }
+
+    gai_ret = getaddrinfo(node, port, &hints, &addr_list);
+    if (gai_ret != 0) {
+        DEBUG_PRINT("[C DEBUG] getaddrinfo failed: %s\n", gai_strerror(gai_ret));
+        return MBEDTLS_ERR_NET_UNKNOWN_HOST;
+    }
+
+    for (cur = addr_list; cur != NULL; cur = cur->ai_next) {
+        fd = (int)socket(cur->ai_family, cur->ai_socktype, cur->ai_protocol);
+        if (fd < 0) {
+            DEBUG_PRINT("[C DEBUG] socket() failed: %s\n", strerror(errno));
+            continue;
+        }
+
+        /* Set socket options BEFORE bind - this is the key difference */
+        int opt = 1;
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&opt, sizeof(opt)) < 0) {
+            DEBUG_PRINT("[C DEBUG] SO_REUSEADDR failed: %s\n", strerror(errno));
+        }
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, (const void *)&opt, sizeof(opt)) < 0) {
+            DEBUG_PRINT("[C DEBUG] SO_REUSEPORT failed: %s\n", strerror(errno));
+        }
+
+        if (bind(fd, cur->ai_addr, cur->ai_addrlen) == 0) {
+            /* For TCP, we need to listen */
+            if (proto != MBEDTLS_NET_PROTO_UDP) {
+                if (listen(fd, MBEDTLS_NET_LISTEN_BACKLOG) == 0) {
+                    DEBUG_PRINT("[C DEBUG] bind_reuseport success, fd=%d\n", fd);
+                    break;  /* Success */
+                } else {
+                    DEBUG_PRINT("[C DEBUG] listen() failed: %s\n", strerror(errno));
+                }
+            } else {
+                break;  /* UDP doesn't need listen */
+            }
+        } else {
+            DEBUG_PRINT("[C DEBUG] bind() failed: %s\n", strerror(errno));
+        }
+
+        close(fd);
+        fd = -1;
+    }
+
+    freeaddrinfo(addr_list);
+
+    if (fd < 0) {
+        return MBEDTLS_ERR_NET_BIND_FAILED;
+    }
+
+    net->fd = fd;
+    return 0;
 }
 
 int mojo_tls_net_accept(void *bind_ctx, void *client_ctx,

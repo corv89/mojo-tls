@@ -69,6 +69,20 @@ fn net_bind(
     return external_call["mojo_tls_net_bind", c_int](ctx.addr, bind_ip, port, proto)
 
 
+fn net_bind_reuseport(
+    ctx: FFIPtr,
+    bind_ip: UnsafePointer[c_char],
+    port: UnsafePointer[c_char],
+    proto: c_int,
+) -> c_int:
+    """Create a listening socket with SO_REUSEPORT on bind_ip:port.
+
+    This allows multiple processes to bind to the same port, with the kernel
+    distributing connections across them. Used for prefork server architecture.
+    """
+    return external_call["mojo_tls_net_bind_reuseport", c_int](ctx.addr, bind_ip, port, proto)
+
+
 fn net_accept(
     bind_ctx: FFIPtr,
     client_ctx: FFIPtr,

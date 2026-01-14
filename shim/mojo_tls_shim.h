@@ -111,6 +111,7 @@ void mojo_tls_net_init(void *ctx);
 void mojo_tls_net_free(void *ctx);
 int mojo_tls_net_connect(void *ctx, const char *host, const char *port, int proto);
 int mojo_tls_net_bind(void *ctx, const char *bind_ip, const char *port, int proto);
+int mojo_tls_net_bind_reuseport(void *ctx, const char *bind_ip, const char *port, int proto);
 int mojo_tls_net_accept(void *bind_ctx, void *client_ctx,
                         void *client_ip, size_t buf_size, size_t *cip_len);
 

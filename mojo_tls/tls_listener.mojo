@@ -13,6 +13,7 @@ from ._ffi.net_sockets import (
     net_init,
     net_free,
     net_bind,
+    net_bind_reuseport,
     net_accept_alloc,
     net_free_context,
     net_set_block,
@@ -337,6 +338,42 @@ struct TLSListener(Movable):
             self._listen_ctx, addr_ptr, port_ptr, MBEDTLS_NET_PROTO_TCP
         )
         check_error(ret, "net_bind")
+
+        self._bound = True
+
+    fn _bind_reuseport(mut self, address: String, port: String) raises:
+        """Bind with SO_REUSEPORT for prefork servers.
+
+        Uses SO_REUSEPORT to allow multiple processes to bind to the same port.
+        Each process gets its own accept queue - kernel distributes connections.
+
+        Args:
+            address: Address to bind to.
+            port: Port to listen on.
+
+        Raises:
+            If binding fails.
+        """
+        # Create null-terminated address string
+        var addr_bytes = address.as_bytes()
+        var addr_buf = List[UInt8](capacity=len(addr_bytes) + 1)
+        for i in range(len(addr_bytes)):
+            addr_buf.append(addr_bytes[i])
+        addr_buf.append(0)
+        var addr_ptr = addr_buf.unsafe_ptr().bitcast[c_char]()
+
+        # Create null-terminated port string
+        var port_bytes = port.as_bytes()
+        var port_buf = List[UInt8](capacity=len(port_bytes) + 1)
+        for i in range(len(port_bytes)):
+            port_buf.append(port_bytes[i])
+        port_buf.append(0)
+        var port_ptr = port_buf.unsafe_ptr().bitcast[c_char]()
+
+        var ret = net_bind_reuseport(
+            self._listen_ctx, addr_ptr, port_ptr, MBEDTLS_NET_PROTO_TCP
+        )
+        check_error(ret, "net_bind_reuseport")
 
         self._bound = True
 
