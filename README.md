@@ -7,6 +7,7 @@ TLS 1.3 bindings for Mojo via mbedTLS 4.0.0.
 - TLS 1.3 client and server support
 - High-level `TLSStream` for easy client connections
 - `TLSListener` for accepting server connections
+- SO_REUSEPORT support for prefork/multi-process servers
 - Static linking with Mojo's `external_call`
 - Platform-detected CA bundle (macOS/Linux)
 
@@ -55,6 +56,25 @@ fn main() raises:
     # Read request, send response...
     client.close()
     _ = listener
+```
+
+### Prefork Server (SO_REUSEPORT)
+
+For multi-process servers, use `_bind_reuseport()` to allow multiple processes to bind to the same port:
+
+```mojo
+from mojo_tls import TLSConfig, TLSListener
+
+fn main() raises:
+    var config = TLSConfig()
+    config.set_server_mode()
+    config.load_own_cert_and_key("server.crt", "server.key")
+
+    var listener = TLSListener(config^)
+    listener._bind_reuseport("0.0.0.0", "8443")  # SO_REUSEPORT enabled
+
+    # Each forked worker calls this independently
+    # Kernel distributes connections across workers
 ```
 
 ## Building
