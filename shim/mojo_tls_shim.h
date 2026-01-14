@@ -74,6 +74,15 @@ const char* mojo_tls_ssl_get_ciphersuite(const void *ssl);
 unsigned int mojo_tls_ssl_get_verify_result(const void *ssl);
 
 /* ============================================================================
+ * Peer Certificate Access
+ * ============================================================================ */
+const void* mojo_tls_ssl_get_peer_cert(const void *ssl);
+const unsigned char* mojo_tls_x509_crt_get_raw_data(const void *crt);
+size_t mojo_tls_x509_crt_get_raw_len(const void *crt);
+int mojo_tls_sha256(const unsigned char *input, size_t input_len,
+                    unsigned char *output);
+
+/* ============================================================================
  * X.509 Certificate Functions
  * ============================================================================ */
 void mojo_tls_x509_crt_init(void *crt);

@@ -305,6 +305,16 @@ fn ssl_get_verify_result(ssl: FFIPtr) -> UInt32:
     return external_call["mojo_tls_ssl_get_verify_result", UInt32](ssl.addr)
 
 
+fn ssl_get_peer_cert(ssl: FFIPtr) -> FFIPtr:
+    """Get the peer's X.509 certificate from the SSL context.
+
+    Returns:
+        FFIPtr to the peer certificate, or null pointer if no certificate.
+        The returned pointer is owned by the SSL context - do not free it.
+    """
+    return FFIPtr(external_call["mojo_tls_ssl_get_peer_cert", Int](ssl.addr))
+
+
 # ============================================================================
 # Private Key Functions
 # ============================================================================

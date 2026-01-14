@@ -267,6 +267,47 @@ unsigned int mojo_tls_ssl_get_verify_result(const void *ssl) {
 }
 
 /* ============================================================================
+ * Peer Certificate Access
+ * ============================================================================ */
+
+const void* mojo_tls_ssl_get_peer_cert(const void *ssl) {
+    const mbedtls_x509_crt *cert = mbedtls_ssl_get_peer_cert(
+        (const mbedtls_ssl_context *)ssl
+    );
+    DEBUG_PRINT("[C DEBUG] ssl_get_peer_cert: ssl=%p, cert=%p\n", ssl, (void*)cert);
+    return cert;
+}
+
+const unsigned char* mojo_tls_x509_crt_get_raw_data(const void *crt) {
+    if (!crt) return NULL;
+    const mbedtls_x509_crt *cert = (const mbedtls_x509_crt *)crt;
+    DEBUG_PRINT("[C DEBUG] x509_crt_get_raw_data: crt=%p, raw.p=%p, raw.len=%zu\n",
+            crt, cert->raw.p, cert->raw.len);
+    return cert->raw.p;
+}
+
+size_t mojo_tls_x509_crt_get_raw_len(const void *crt) {
+    if (!crt) return 0;
+    const mbedtls_x509_crt *cert = (const mbedtls_x509_crt *)crt;
+    return cert->raw.len;
+}
+
+int mojo_tls_sha256(const unsigned char *input, size_t input_len,
+                    unsigned char *output) {
+    /* PSA Crypto must be initialized (via mojo_tls_init) */
+    size_t out_len;
+    psa_status_t status = psa_hash_compute(
+        PSA_ALG_SHA_256,
+        input, input_len,
+        output, 32,  /* SHA-256 is always 32 bytes */
+        &out_len
+    );
+    DEBUG_PRINT("[C DEBUG] sha256: input=%p, len=%zu, status=%d\n",
+            (void*)input, input_len, (int)status);
+    return (status == PSA_SUCCESS) ? 0 : (int)status;
+}
+
+/* ============================================================================
  * X.509 Certificate Functions
  * ============================================================================ */
 

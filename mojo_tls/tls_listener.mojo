@@ -167,6 +167,52 @@ struct TLSClientConnection(Movable):
         """
         return self._connected
 
+    fn has_peer_cert(self) -> Bool:
+        """Check if the client presented a certificate.
+
+        Useful for optional client certificate authentication.
+
+        Returns:
+            True if client certificate is available.
+        """
+        return self._tls_ctx.has_peer_cert()
+
+    fn get_peer_cert_fingerprint(self) raises -> List[UInt8]:
+        """Get SHA-256 fingerprint of the client's certificate.
+
+        Returns:
+            32-byte SHA-256 fingerprint as List[UInt8].
+
+        Raises:
+            If no client certificate or hashing fails.
+        """
+        return self._tls_ctx.get_peer_cert_fingerprint()
+
+    fn get_peer_cert_fingerprint_hex(self) raises -> String:
+        """Get SHA-256 fingerprint of the client's certificate as hex string.
+
+        Returns:
+            64-character lowercase hex string.
+
+        Raises:
+            If no client certificate or hashing fails.
+        """
+        return self._tls_ctx.get_peer_cert_fingerprint_hex()
+
+    fn verify_peer_cert_fingerprint(self, expected_hex: String) raises -> Bool:
+        """Verify client certificate fingerprint matches expected SHA-256 hex.
+
+        Args:
+            expected_hex: Expected fingerprint as hex string (case-insensitive).
+
+        Returns:
+            True if fingerprint matches.
+
+        Raises:
+            If no client certificate or hashing fails.
+        """
+        return self._tls_ctx.verify_peer_cert_fingerprint(expected_hex)
+
 
 struct TLSListener(Movable):
     """TLS server listener for accepting incoming TLS connections.

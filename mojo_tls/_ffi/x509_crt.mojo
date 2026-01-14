@@ -122,3 +122,53 @@ fn x509_crt_verify_info(
         or a negative error code.
     """
     return external_call["mbedtls_x509_crt_verify_info", c_int](buf, size, prefix, flags)
+
+
+# ============================================================================
+# Certificate Raw Data Access
+# ============================================================================
+
+
+fn x509_crt_get_raw_data(crt: FFIPtr) -> FFIPtr:
+    """Get pointer to the raw DER-encoded certificate data.
+
+    Args:
+        crt: Certificate context.
+
+    Returns:
+        FFIPtr to the raw data (owned by the certificate - do not free).
+    """
+    return FFIPtr(external_call["mojo_tls_x509_crt_get_raw_data", Int](crt.addr))
+
+
+fn x509_crt_get_raw_len(crt: FFIPtr) -> Int:
+    """Get length of the raw DER-encoded certificate data.
+
+    Args:
+        crt: Certificate context.
+
+    Returns:
+        Length in bytes of the raw certificate data.
+    """
+    return external_call["mojo_tls_x509_crt_get_raw_len", Int](crt.addr)
+
+
+# ============================================================================
+# Cryptographic Hash Functions
+# ============================================================================
+
+
+fn sha256(
+    input: UnsafePointer[UInt8], input_len: Int, output: UnsafePointer[UInt8]
+) -> c_int:
+    """Compute SHA-256 hash of input data using PSA Crypto.
+
+    Args:
+        input: Input data buffer.
+        input_len: Length of input data.
+        output: Output buffer (must be at least 32 bytes).
+
+    Returns:
+        0 on success, non-zero on error.
+    """
+    return external_call["mojo_tls_sha256", c_int](input, input_len, output)

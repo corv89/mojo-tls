@@ -26,14 +26,23 @@ from ._ffi.ssl import (
     ssl_get_version,
     ssl_get_ciphersuite,
     ssl_get_verify_result,
+    ssl_get_peer_cert,
     FFIPtr,
     alloc_ffi,
     free_ffi,
     strlen_ffi,
     strcpy_ffi,
 )
+from ._ffi.x509_crt import x509_crt_get_raw_data, x509_crt_get_raw_len, sha256
 from .error import check_error, TLSError
 from .tls_config import TLSConfig
+
+
+fn _hex_digit(val: UInt8) -> String:
+    """Convert 0-15 to lowercase hex digit."""
+    if val < 10:
+        return chr(Int(val) + ord("0"))
+    return chr(Int(val) - 10 + ord("a"))
 
 
 struct TLSContext(Movable):
@@ -325,6 +334,89 @@ struct TLSContext(Movable):
         """
         return self._ssl
 
+    fn has_peer_cert(self) -> Bool:
+        """Check if the peer presented a certificate.
+
+        Returns:
+            True if peer certificate is available.
+        """
+        return Bool(ssl_get_peer_cert(self._ssl))
+
+    fn get_peer_cert_fingerprint(self) raises -> List[UInt8]:
+        """Get SHA-256 fingerprint of the peer's certificate.
+
+        The fingerprint is the SHA-256 hash of the DER-encoded certificate,
+        which provides a unique identifier suitable for certificate pinning.
+
+        Returns:
+            32-byte SHA-256 fingerprint as List[UInt8].
+
+        Raises:
+            If no peer certificate is available or hashing fails.
+        """
+        var cert_ptr = ssl_get_peer_cert(self._ssl)
+        if not cert_ptr:
+            raise Error("No peer certificate available")
+
+        var raw_data = x509_crt_get_raw_data(cert_ptr)
+        var raw_len = x509_crt_get_raw_len(cert_ptr)
+
+        if not raw_data or raw_len == 0:
+            raise Error("Certificate has no raw data")
+
+        # Allocate output buffer for SHA-256 (32 bytes)
+        var fingerprint = List[UInt8](capacity=32)
+        fingerprint.resize(32, 0)
+
+        # Compute SHA-256 of the DER-encoded certificate
+        var raw_ptr = UnsafePointer[UInt8](address=raw_data.addr)
+        var ret = sha256(raw_ptr, raw_len, fingerprint.unsafe_ptr())
+        if ret != 0:
+            raise Error("SHA-256 computation failed: " + String(ret))
+
+        return fingerprint^
+
+    fn get_peer_cert_fingerprint_hex(self) raises -> String:
+        """Get SHA-256 fingerprint of the peer's certificate as hex string.
+
+        Returns:
+            64-character hex string (lowercase) representing the fingerprint.
+
+        Raises:
+            If no peer certificate is available or hashing fails.
+        """
+        var fp = self.get_peer_cert_fingerprint()
+        var hex = String()
+
+        for i in range(len(fp)):
+            var b = fp[i]
+            hex += _hex_digit((b >> 4) & 0x0F) + _hex_digit(b & 0x0F)
+
+        return hex
+
+    fn verify_peer_cert_fingerprint(self, expected_hex: String) raises -> Bool:
+        """Verify peer certificate fingerprint matches expected SHA-256 hex.
+
+        Args:
+            expected_hex: Expected fingerprint as hex string (case-insensitive).
+
+        Returns:
+            True if fingerprint matches.
+
+        Raises:
+            If no peer certificate is available or hashing fails.
+        """
+        var actual = self.get_peer_cert_fingerprint_hex()
+        # Compare lowercase for case-insensitivity
+        var expected_lower = String()
+        for i in range(len(expected_hex)):
+            var c = expected_hex[i]
+            if ord("A") <= ord(c) <= ord("Z"):
+                expected_lower += chr(ord(c) - ord("A") + ord("a"))
+            else:
+                expected_lower += c
+        return actual == expected_lower
+
 
 struct ServerTLSContext(Movable):
     """TLS context for server-accepted connections.
@@ -466,3 +558,87 @@ struct ServerTLSContext(Movable):
     fn is_handshake_done(self) -> Bool:
         """Check if handshake has completed successfully."""
         return self._handshake_done
+
+    fn has_peer_cert(self) -> Bool:
+        """Check if the peer (client) presented a certificate.
+
+        Returns:
+            True if peer certificate is available.
+        """
+        return Bool(ssl_get_peer_cert(self._ssl))
+
+    fn get_peer_cert_fingerprint(self) raises -> List[UInt8]:
+        """Get SHA-256 fingerprint of the peer's (client's) certificate.
+
+        The fingerprint is the SHA-256 hash of the DER-encoded certificate,
+        which provides a unique identifier suitable for client certificate
+        authentication (e.g., Gemini protocol).
+
+        Returns:
+            32-byte SHA-256 fingerprint as List[UInt8].
+
+        Raises:
+            If no peer certificate is available or hashing fails.
+        """
+        var cert_ptr = ssl_get_peer_cert(self._ssl)
+        if not cert_ptr:
+            raise Error("No peer certificate available")
+
+        var raw_data = x509_crt_get_raw_data(cert_ptr)
+        var raw_len = x509_crt_get_raw_len(cert_ptr)
+
+        if not raw_data or raw_len == 0:
+            raise Error("Certificate has no raw data")
+
+        # Allocate output buffer for SHA-256 (32 bytes)
+        var fingerprint = List[UInt8](capacity=32)
+        fingerprint.resize(32, 0)
+
+        # Compute SHA-256 of the DER-encoded certificate
+        var raw_ptr = UnsafePointer[UInt8](address=raw_data.addr)
+        var ret = sha256(raw_ptr, raw_len, fingerprint.unsafe_ptr())
+        if ret != 0:
+            raise Error("SHA-256 computation failed: " + String(ret))
+
+        return fingerprint^
+
+    fn get_peer_cert_fingerprint_hex(self) raises -> String:
+        """Get SHA-256 fingerprint of the peer's certificate as hex string.
+
+        Returns:
+            64-character hex string (lowercase) representing the fingerprint.
+
+        Raises:
+            If no peer certificate is available or hashing fails.
+        """
+        var fp = self.get_peer_cert_fingerprint()
+        var hex = String()
+
+        for i in range(len(fp)):
+            var b = fp[i]
+            hex += _hex_digit((b >> 4) & 0x0F) + _hex_digit(b & 0x0F)
+
+        return hex
+
+    fn verify_peer_cert_fingerprint(self, expected_hex: String) raises -> Bool:
+        """Verify peer certificate fingerprint matches expected SHA-256 hex.
+
+        Args:
+            expected_hex: Expected fingerprint as hex string (case-insensitive).
+
+        Returns:
+            True if fingerprint matches.
+
+        Raises:
+            If no peer certificate is available or hashing fails.
+        """
+        var actual = self.get_peer_cert_fingerprint_hex()
+        # Compare lowercase for case-insensitivity
+        var expected_lower = String()
+        for i in range(len(expected_hex)):
+            var c = expected_hex[i]
+            if ord("A") <= ord(c) <= ord("Z"):
+                expected_lower += chr(ord(c) - ord("A") + ord("a"))
+            else:
+                expected_lower += c
+        return actual == expected_lower
