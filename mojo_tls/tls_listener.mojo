@@ -58,12 +58,10 @@ struct TLSClientConnection(Movable):
         self._net_ctx = existing._net_ctx
         self._tls_ctx = existing._tls_ctx^
         self._connected = existing._connected
-        # Invalidate source to prevent double-free
-        existing._net_ctx = FFIPtr(0)
 
     fn __del__(deinit self):
         """Clean up connection resources."""
-        # Skip cleanup if this object was moved-from
+        # Skip cleanup if moved-from
         if not self._net_ctx:
             return
         if self._connected:
@@ -270,12 +268,10 @@ struct TLSListener(Movable):
         self._listen_ctx = existing._listen_ctx
         self._config = existing._config^
         self._bound = existing._bound
-        # Invalidate source to prevent double-free
-        existing._listen_ctx = FFIPtr(0)
 
     fn __del__(deinit self):
         """Clean up listener resources."""
-        # Skip cleanup if this object was moved-from
+        # Skip cleanup if moved-from
         if not self._listen_ctx:
             return
         net_free(self._listen_ctx)

@@ -98,8 +98,6 @@ struct TLSContext(Movable):
         self._config = existing._config^
         self._ssl = existing._ssl
         self._handshake_done = existing._handshake_done
-        # Invalidate source to prevent double-free
-        existing._ssl = FFIPtr(0)
 
     fn __del__(deinit self):
         """Clean up TLS context and free resources."""
@@ -460,12 +458,10 @@ struct ServerTLSContext(Movable):
         """Move constructor for ServerTLSContext."""
         self._ssl = existing._ssl
         self._handshake_done = existing._handshake_done
-        # Invalidate source to prevent double-free when it's destroyed
-        existing._ssl = FFIPtr(0)
 
     fn __del__(deinit self):
         """Clean up TLS context and free resources."""
-        # Skip cleanup if this object was moved-from (pointer is null)
+        # Skip cleanup if moved-from
         if not self._ssl:
             return
         ssl_free(self._ssl)

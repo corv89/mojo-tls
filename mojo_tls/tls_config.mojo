@@ -131,11 +131,6 @@ struct TLSConfig(Movable):
         self._is_client = existing._is_client
         self._ca_loaded = existing._ca_loaded
         self._own_cert_loaded = existing._own_cert_loaded
-        # Invalidate source to prevent double-free when it's destroyed
-        existing._config = FFIPtr(0)
-        existing._ca_chain = FFIPtr(0)
-        existing._own_cert = FFIPtr(0)
-        existing._pk_ctx = FFIPtr(0)
 
     fn __del__(deinit self):
         """Clean up TLS configuration and free resources."""
