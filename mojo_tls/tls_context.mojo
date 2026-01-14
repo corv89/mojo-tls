@@ -6,6 +6,7 @@ initialization, handshake, I/O, and cleanup.
 
 from sys.ffi import external_call, c_int, c_char, c_size_t
 from memory import UnsafePointer
+from builtin.type_aliases import MutExternalOrigin
 
 from ._lib import SSL_CONTEXT_SIZE
 from ._ffi.constants import (
@@ -338,7 +339,7 @@ struct TLSContext(Movable):
         Returns:
             True if peer certificate is available.
         """
-        return Bool(ssl_get_peer_cert(self._ssl))
+        return ssl_get_peer_cert(self._ssl).addr != 0
 
     fn get_peer_cert_fingerprint(self) raises -> List[UInt8]:
         """Get SHA-256 fingerprint of the peer's certificate.
@@ -367,7 +368,7 @@ struct TLSContext(Movable):
         fingerprint.resize(32, 0)
 
         # Compute SHA-256 of the DER-encoded certificate
-        var raw_ptr = UnsafePointer[UInt8](address=raw_data.addr)
+        var raw_ptr = UnsafePointer[UInt8, MutExternalOrigin](unsafe_from_address=raw_data.addr)
         var ret = sha256(raw_ptr, raw_len, fingerprint.unsafe_ptr())
         if ret != 0:
             raise Error("SHA-256 computation failed: " + String(ret))
@@ -561,7 +562,7 @@ struct ServerTLSContext(Movable):
         Returns:
             True if peer certificate is available.
         """
-        return Bool(ssl_get_peer_cert(self._ssl))
+        return ssl_get_peer_cert(self._ssl).addr != 0
 
     fn get_peer_cert_fingerprint(self) raises -> List[UInt8]:
         """Get SHA-256 fingerprint of the peer's (client's) certificate.
@@ -591,7 +592,7 @@ struct ServerTLSContext(Movable):
         fingerprint.resize(32, 0)
 
         # Compute SHA-256 of the DER-encoded certificate
-        var raw_ptr = UnsafePointer[UInt8](address=raw_data.addr)
+        var raw_ptr = UnsafePointer[UInt8, MutExternalOrigin](unsafe_from_address=raw_data.addr)
         var ret = sha256(raw_ptr, raw_len, fingerprint.unsafe_ptr())
         if ret != 0:
             raise Error("SHA-256 computation failed: " + String(ret))
