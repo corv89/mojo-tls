@@ -122,7 +122,7 @@ struct TLSConfig(Movable):
         self._ca_loaded = False
         self._own_cert_loaded = False
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Move constructor for TLSConfig."""
         self._config = existing._config
         self._ca_chain = existing._ca_chain
@@ -137,7 +137,7 @@ struct TLSConfig(Movable):
         existing._own_cert = FFIPtr(0)
         existing._pk_ctx = FFIPtr(0)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Clean up TLS configuration and free resources."""
         # Skip cleanup if this object was moved-from (pointers are null)
         if not self._config:

@@ -107,7 +107,7 @@ fn get_null_ptr() -> FFIPtr:
 
 
 # For backwards compatibility
-alias OpaquePtr = FFIPtr
+comptime OpaquePtr = FFIPtr
 
 
 # ============================================================================

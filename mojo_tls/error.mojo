@@ -74,7 +74,7 @@ struct TLSError(Stringable, Writable, Copyable, Movable):
         self.code = other.code
         self.message = other.message
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move constructor."""
         self.code = other.code
         self.message = other.message^

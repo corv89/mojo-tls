@@ -41,7 +41,7 @@ struct TLSClientConnection(Movable):
     var _connected: Bool
 
     fn __init__(
-        out self, owned net_ctx: FFIPtr, owned tls_ctx: ServerTLSContext
+        out self, var net_ctx: FFIPtr, var tls_ctx: ServerTLSContext
     ):
         """Initialize from pre-created network and TLS contexts.
 
@@ -53,7 +53,7 @@ struct TLSClientConnection(Movable):
         self._tls_ctx = tls_ctx^
         self._connected = False
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Move constructor."""
         self._net_ctx = existing._net_ctx
         self._tls_ctx = existing._tls_ctx^
@@ -61,7 +61,7 @@ struct TLSClientConnection(Movable):
         # Invalidate source to prevent double-free
         existing._net_ctx = FFIPtr(0)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Clean up connection resources."""
         # Skip cleanup if this object was moved-from
         if not self._net_ctx:
@@ -265,7 +265,7 @@ struct TLSListener(Movable):
         self._config = config^
         self._bound = False
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Move constructor."""
         self._listen_ctx = existing._listen_ctx
         self._config = existing._config^
@@ -273,7 +273,7 @@ struct TLSListener(Movable):
         # Invalidate source to prevent double-free
         existing._listen_ctx = FFIPtr(0)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Clean up listener resources."""
         # Skip cleanup if this object was moved-from
         if not self._listen_ctx:

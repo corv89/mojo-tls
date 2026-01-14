@@ -10,10 +10,10 @@ from sys.ffi import external_call, c_int, c_char
 
 
 # POSIX dlopen flags
-alias RTLD_LAZY: c_int = 1
-alias RTLD_NOW: c_int = 2
-alias RTLD_LOCAL: c_int = 4
-alias RTLD_GLOBAL: c_int = 8
+comptime RTLD_LAZY: c_int = 1
+comptime RTLD_NOW: c_int = 2
+comptime RTLD_LOCAL: c_int = 4
+comptime RTLD_GLOBAL: c_int = 8
 
 
 struct DLHandle:
@@ -49,12 +49,12 @@ struct DLHandle:
             var err = external_call["dlerror", Int]()
             raise Error("Failed to load library: " + path)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Close the library handle."""
         if self._handle != 0:
             _ = external_call["dlclose", c_int](self._handle)
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move constructor."""
         self._handle = other._handle
         other._handle = 0

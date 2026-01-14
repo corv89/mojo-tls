@@ -66,13 +66,13 @@ struct TLSStream(Movable):
         self._tls_ctx = TLSContext(config^)
         self._connected = False
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Move constructor for TLSStream."""
         self._net_ctx = existing._net_ctx
         self._tls_ctx = existing._tls_ctx^
         self._connected = existing._connected
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Clean up TLS stream and free resources."""
         if self._connected:
             try:
